@@ -1,0 +1,6 @@
+{
+  "name": "TG Streamer",
+  "description": "A native Netflix-style Android client utilizing Telegram as a server-less media streaming database.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
