@@ -6,12 +6,12 @@ on:
       - main
       - master
     tags:
-      - 'v*' # Triggers a release when pushing a version tag (e.g., v1.0.0)
+      - 'v*'
   pull_request:
     branches:
       - main
       - master
-  workflow_dispatch: # Allows manual trigger from the GitHub Actions tab
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -33,16 +33,19 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # Automatically sets up a verified Gradle environment to bypass bad/corrupt local wrapper jars
-      - name: Set up Gradle
+      - name: Set up Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: 'current' # Automatically uses a stable, compatible Gradle version
+          gradle-version: '9.3.1'
+          validate-wrappers: false
 
-      - name: Create Env File Placeholder
+      - name: Create Env File Placeholder and Restore Debug Keystore
         run: |
           if [ ! -f .env ]; then
             cp .env.example .env 2>/dev/null || touch .env
+          fi
+          if [ -f debug.keystore.base64 ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
           fi
 
       - name: Build Debug App (Sideload Ready APK)
@@ -119,7 +122,7 @@ jobs:
           echo "This release is automatically compiled by GitHub Actions." >> release_notes.md
           echo "" >> release_notes.md
           echo "#### 📦 Included Artifacts:" >> release_notes.md
-          echo "- **TG-Streamer-debug.apk**: Out-of-the-box side-loadable package." >> release_notes.md
+          echo "- **TG-Streamer-debug.apk**: Fully functioning test build. Safe for general manual package side-loading." >> release_notes.md
           echo "" >> release_notes.md
           echo "#### 🔄 Recent Changes:" >> release_notes.md
           git log -n 5 --pretty=format:"* %s (%h)" >> release_notes.md
