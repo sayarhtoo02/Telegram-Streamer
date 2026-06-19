@@ -71,6 +71,7 @@ fun PlayerScreen(
     viewModel: MainViewModel,
     episode: EpisodeEntity,
     quality: QualityEntity,
+    onNavigateToNextEpisode: (EpisodeEntity, QualityEntity) -> Unit,
     onClosePlayer: () -> Unit
 ) {
     val context = LocalContext.current
@@ -81,8 +82,8 @@ fun PlayerScreen(
     var currentPositionMs by remember { mutableStateOf(0L) }
     var totalDurationMs by remember { mutableStateOf(0L) }
     
-    // Instantiate ExoPlayer
-    val exoPlayer = remember {
+    // Instantiate ExoPlayer keyed by fileId to re-initialize when quality/episode changes
+    val exoPlayer = remember(quality.fileId) {
         ExoPlayer.Builder(context).build().apply {
             val mediaItem = MediaItem.Builder()
                 .setUri(Uri.parse("tdlib://stream?file_id=${quality.fileId}"))
@@ -101,13 +102,11 @@ fun PlayerScreen(
     BackHandler {
         coroutineScope.launch {
             viewModel.saveWatchHistory(currentPositionMs, totalDurationMs)
-            exoPlayer.stop()
-            exoPlayer.release()
             onClosePlayer()
         }
     }
 
-    // Playback state tracker
+    // Playback state tracker with automatic lifecycle cleanup/release
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
@@ -120,6 +119,7 @@ fun PlayerScreen(
         exoPlayer.addListener(listener)
         onDispose {
             exoPlayer.removeListener(listener)
+            exoPlayer.release()
         }
     }
 
@@ -161,8 +161,6 @@ fun PlayerScreen(
             onClick = {
                 coroutineScope.launch {
                     viewModel.saveWatchHistory(currentPositionMs, totalDurationMs)
-                    exoPlayer.stop()
-                    exoPlayer.release()
                     onClosePlayer()
                 }
             },
@@ -221,8 +219,6 @@ fun PlayerScreen(
                                 onClick = {
                                     coroutineScope.launch {
                                         viewModel.saveWatchHistory(totalDurationMs, totalDurationMs)
-                                        exoPlayer.stop()
-                                        exoPlayer.release()
                                         onClosePlayer()
                                     }
                                 },
@@ -245,22 +241,21 @@ fun PlayerScreen(
                                         viewModel.saveWatchHistory(totalDurationMs, totalDurationMs)
                                         
                                         // Scan local database for the NEXT episode
-                                        val episodesList = viewModel.allSeries.value
                                         val seriesEpisodes = viewModel.getEpisodes(episode.seriesTitle)
                                         val nextEp = seriesEpisodes.find { it.episodeNumber == episode.episodeNumber + 1 }
                                         
                                         if (nextEp != null) {
-                                            viewModel.selectEpisode(nextEp)
-                                            // Release current player resources
-                                            exoPlayer.stop()
-                                            exoPlayer.release()
-                                            
-                                            // Trigger callback to recompute and mount player for next episode
-                                            hasPlaybackFinished = false
+                                            val qualities = viewModel.getQualities(nextEp.id)
+                                            val firstQual = qualities.firstOrNull()
+                                            if (firstQual != null) {
+                                                viewModel.selectEpisode(nextEp)
+                                                viewModel.selectQuality(firstQual)
+                                                hasPlaybackFinished = false
+                                                onNavigateToNextEpisode(nextEp, firstQual)
+                                            } else {
+                                                onClosePlayer()
+                                            }
                                         } else {
-                                            // No next episode, close player
-                                            exoPlayer.stop()
-                                            exoPlayer.release()
                                             onClosePlayer()
                                         }
                                     }

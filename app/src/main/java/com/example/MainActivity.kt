@@ -96,7 +96,7 @@ class MainActivity : ComponentActivity() {
                                     coroutineScope.launch {
                                         val ep = viewModel.getEpisodeById(historyItem.episodeId)
                                         val qualityList = viewModel.getQualities(historyItem.episodeId)
-                                        val qual = qualityList.find { it.quality == historyItem.quality }
+                                        val qual = qualityList.find { it.quality == historyItem.quality } ?: qualityList.firstOrNull()
                                         if (ep != null && qual != null) {
                                             viewModel.selectEpisode(ep)
                                             viewModel.selectQuality(qual)
@@ -136,6 +136,9 @@ class MainActivity : ComponentActivity() {
                                 viewModel = viewModel,
                                 episode = screen.episode,
                                 quality = screen.quality,
+                                onNavigateToNextEpisode = { nextEp, nextQual ->
+                                    currentScreen = AppScreen.PLAYER(nextEp, nextQual)
+                                },
                                 onClosePlayer = { navigateBack() }
                             )
                         }
