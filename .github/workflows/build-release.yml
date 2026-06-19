@@ -6,12 +6,12 @@ on:
       - main
       - master
     tags:
-      - 'v*'
+      - 'v*' # Triggers a release when pushing a version tag (e.g., v1.0.0)
   pull_request:
     branches:
       - main
       - master
-  workflow_dispatch:
+  workflow_dispatch: # Allows manual trigger from the GitHub Actions tab
 
 permissions:
   contents: write
@@ -32,10 +32,12 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: 'gradle'
 
-      - name: Make Gradle Wrapper Executable
-        run: chmod +x gradlew
+      # Automatically sets up a verified Gradle environment to bypass bad/corrupt local wrapper jars
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 'current' # Automatically uses a stable, compatible Gradle version
 
       - name: Create Env File Placeholder
         run: |
@@ -44,7 +46,7 @@ jobs:
           fi
 
       - name: Build Debug App (Sideload Ready APK)
-        run: ./gradlew assembleDebug
+        run: gradle assembleDebug
 
       - name: Check Release Signing Keys
         id: check_keys
@@ -60,7 +62,7 @@ jobs:
 
       - name: Build Unsigned Release App
         if: ${{ steps.check_keys.outputs.keys_present == 'false' }}
-        run: ./gradlew assembleRelease || echo "Unsigned release build skipped or failed. Falling back to debug."
+        run: gradle assembleRelease || echo "Unsigned release build skipped or failed. Falling back to debug."
 
       - name: Build Signed Release App
         if: ${{ steps.check_keys.outputs.keys_present == 'true' }}
@@ -72,7 +74,7 @@ jobs:
           if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
             echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > my-upload-key.jks
           fi
-          ./gradlew assembleRelease
+          gradle assembleRelease
 
       - name: Rename and Prepare Build Artifacts
         run: |
@@ -117,7 +119,7 @@ jobs:
           echo "This release is automatically compiled by GitHub Actions." >> release_notes.md
           echo "" >> release_notes.md
           echo "#### 📦 Included Artifacts:" >> release_notes.md
-          echo "- **TG-Streamer-debug.apk**: Fully functioning test build. Safe for general manual package side-loading." >> release_notes.md
+          echo "- **TG-Streamer-debug.apk**: Out-of-the-box side-loadable package." >> release_notes.md
           echo "" >> release_notes.md
           echo "#### 🔄 Recent Changes:" >> release_notes.md
           git log -n 5 --pretty=format:"* %s (%h)" >> release_notes.md
