@@ -32,19 +32,28 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: 'gradle'
 
-      - name: Make Gradle Wrapper Executable
-        run: chmod +x gradlew
+      - name: Set up Gradle 9.3.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+          validate-wrappers: false
 
-      - name: Create Env File Placeholder
+      - name: Create Env File Placeholder and Restore Debug Keystore
         run: |
           if [ ! -f .env ]; then
             cp .env.example .env 2>/dev/null || touch .env
           fi
+          if [ -f debug.keystore.base64 ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+          fi
+          if [ ! -f debug.keystore ]; then
+            echo "debug.keystore not found. Generating a new one using keytool..."
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
 
       - name: Build Debug App (Sideload Ready APK)
-        run: ./gradlew assembleDebug
+        run: gradle assembleDebug
 
       - name: Check Release Signing Keys
         id: check_keys
@@ -60,7 +69,7 @@ jobs:
 
       - name: Build Unsigned Release App
         if: ${{ steps.check_keys.outputs.keys_present == 'false' }}
-        run: ./gradlew assembleRelease || echo "Unsigned release build skipped or failed. Falling back to debug."
+        run: gradle assembleRelease || echo "Unsigned release build skipped or failed. Falling back to debug."
 
       - name: Build Signed Release App
         if: ${{ steps.check_keys.outputs.keys_present == 'true' }}
@@ -72,19 +81,16 @@ jobs:
           if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
             echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > my-upload-key.jks
           fi
-          ./gradlew assembleRelease
+          gradle assembleRelease
 
       - name: Rename and Prepare Build Artifacts
         run: |
           mkdir -p artifacts/
-          if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
-            cp app/build/outputs/apk/debug/app-debug.apk artifacts/TG-Streamer-debug.apk
-          fi
-          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
-            cp app/build/outputs/apk/release/app-release.apk artifacts/TG-Streamer-release.apk
-          elif [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
-            cp app/build/outputs/apk/release/app-release-unsigned.apk artifacts/TG-Streamer-release-unsigned.apk
-          fi
+          # Dynamically locate and rename generated APKs to guarantee copy succeeds regardless of fine-grained AGP structure
+          find app/build/outputs/apk/ -name "*.apk" -print
+          find app/build/outputs/apk/ -name "*debug.apk" -exec cp {} artifacts/TG-Streamer-debug.apk \; 2>/dev/null || true
+          find app/build/outputs/apk/ -name "*release.apk" -exec cp {} artifacts/TG-Streamer-release.apk \; 2>/dev/null || true
+          find app/build/outputs/apk/ -name "*release-unsigned.apk" -exec cp {} artifacts/TG-Streamer-release-unsigned.apk \; 2>/dev/null || true
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
@@ -97,7 +103,7 @@ jobs:
     name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
-    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || github.ref_name == 'main' || github.ref_name == 'master' || github.event_name == 'workflow_dispatch' }}
 
     steps:
       - name: Checkout Repository
@@ -126,6 +132,9 @@ jobs:
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'latest' }}
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'Latest Continuous Build' }}
           body_path: release_notes.md
           files: release-artifacts/*
           token: ${{ secrets.GITHUB_TOKEN }}
